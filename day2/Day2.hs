@@ -75,6 +75,7 @@ part2 = sum . map round
     wantedResult Z = Win
 
     strat opp s = rpsForResult opp (wantedResult s)
+
 testcase :: FilePath -> IO ()
 testcase fname = do
     putStrLn fname
