@@ -1,2 +1,4 @@
+*.o
+*.hi
 /secret.py
 /__pycache__
