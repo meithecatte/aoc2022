@@ -57,41 +57,43 @@ parseMonkey t =
         , ifFalse = tread ifFalse
         }
 
-reducer monkeys = foldl' lcm 1 $ test <$> monkeys
+reducer monkeys =
+    let m = foldl' lcm 1 $ test <$> monkeys in
+    \v -> v `mod` m
 
 type Items s = STArray s Int [Integer]
 type Activity s = STUArray s Int Int
+type St s = (Items s, Activity s, Integer -> Integer)
 
 modifyArray :: MArray a e m => Ix i => a i e -> i -> (e -> e) -> m ()
 modifyArray arr i f = do
     v <- readArray arr i
     writeArray arr i $! f v
 
-doItem :: (Items s, Activity s) -> Integer -> Monkey -> Integer -> ST s ()
-doItem (items, activity) red m worry = do
+doItem :: St s -> Monkey -> Integer -> ST s ()
+doItem (items, activity, red) m worry = do
     let n = monkeyNum m
-    let !worry' = operation m worry `mod` red
+    let !worry' = red $ operation m worry
     let next = if worry' `mod` test m == 0 then ifTrue m else ifFalse m
     modifyArray items next (worry':)
     modifyArray activity n (+1)
 
-doMonkey :: (Items s, Activity s) -> Integer -> Monkey -> ST s ()
-doMonkey s@(items, activity) red m = do
+doMonkey :: St s -> Monkey -> ST s ()
+doMonkey s@(items, activity, red) m = do
     let n = monkeyNum m
     xs <- readArray items n
     writeArray items n []
-    mapM_ (doItem s red m) (reverse xs)
+    mapM_ (doItem s m) (reverse xs)
 
-doRound :: (Items s, Activity s) -> Integer -> [Monkey] -> ST s ()
-doRound s red ms = mapM_ (doMonkey s red) ms
+doRound :: St s -> [Monkey] -> ST s ()
+doRound s ms = mapM_ (doMonkey s) ms
 
-doRounds :: [Monkey] -> Int -> ST s (Activity s)
-doRounds ms n = do
+doRounds :: (Integer -> Integer) -> [Monkey] -> Int -> ST s (Activity s)
+doRounds red ms n = do
     let lastN = length ms - 1
-    let red = reducer ms
     monkeyItems <- newListArray (0, lastN) ((reverse . items) <$> ms)
     activity <- newArray (0, lastN) 0
-    mapM_ (const $ doRound (monkeyItems, activity) red ms) [1..n]
+    mapM_ (const $ doRound (monkeyItems, activity, red) ms) [1..n]
     return activity
 
 parse :: Text -> [Monkey]
@@ -99,7 +101,12 @@ parse t = parseMonkey <$> T.splitOn "\n\n" t
 
 part1 monkeys = a0 * a1
     where
-    activity = elems $ runSTUArray (doRounds monkeys 10000)
+    activity = elems $ runSTUArray (doRounds (`div` 3) monkeys 20)
+    a0:a1:_ = reverse $ sort activity
+
+part2 monkeys = a0 * a1
+    where
+    activity = elems $ runSTUArray (doRounds (reducer monkeys) monkeys 10000)
     a0:a1:_ = reverse $ sort activity
 
 testcase :: FilePath -> IO ()
@@ -108,8 +115,8 @@ testcase fname = do
     input <- parse <$> T.readFile fname
     let p1 = part1 input
     putStrLn ("Part 1: " ++ show p1)
-    --let p2 = part2 input
-    --putStrLn ("Part 2:\n" ++ p2)
+    let p2 = part2 input
+    putStrLn ("Part 2: " ++ show p2)
 
 main = do
     testcase "example.in"
