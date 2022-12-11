@@ -65,6 +65,7 @@ type Items s = STArray s Int [Integer]
 type Activity s = STUArray s Int Int
 type St s = (Items s, Activity s, Integer -> Integer)
 
+{-# INLINE modifyArray #-}
 modifyArray :: MArray a e m => Ix i => a i e -> i -> (e -> e) -> m ()
 modifyArray arr i f = do
     v <- readArray arr i
