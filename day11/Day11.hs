@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import Data.Text (Text)
@@ -8,10 +10,12 @@ import Data.Set (Set)
 import Data.List
 import Data.Maybe
 import Data.Char
-import Control.Monad.Trans.State.Strict
 import Control.Lens.Operators
 import Control.Lens.At
 import Control.Lens.Tuple
+import Data.Array.ST
+import Data.Array.IArray (Array, elems)
+import Control.Monad.ST
 
 tread :: Read a => Text -> a
 tread = read . T.unpack
@@ -53,40 +57,49 @@ parseMonkey t =
         , ifFalse = tread ifFalse
         }
 
-type Items = [[Integer]]
-type Activity = [Int]
-type St = (Items, Activity)
+reducer monkeys = foldl' lcm 1 $ test <$> monkeys
 
-doItem :: Monkey -> Integer -> State St ()
-doItem m worry = do
+type Items s = STArray s Int [Integer]
+type Activity s = STUArray s Int Int
+
+modifyArray :: MArray a e m => Ix i => a i e -> i -> (e -> e) -> m ()
+modifyArray arr i f = do
+    v <- readArray arr i
+    writeArray arr i $! f v
+
+doItem :: (Items s, Activity s) -> Integer -> Monkey -> Integer -> ST s ()
+doItem (items, activity) red m worry = do
     let n = monkeyNum m
-    let worry' = operation m worry `div` 3
+    let !worry' = operation m worry `mod` red
     let next = if worry' `mod` test m == 0 then ifTrue m else ifFalse m
-    modify (_1 . ix next %~ (++ [worry']))
-    modify (_2 . ix n %~ (+1))
+    modifyArray items next (worry':)
+    modifyArray activity n (+1)
 
-doMonkey :: Monkey -> State St ()
-doMonkey m = do
+doMonkey :: (Items s, Activity s) -> Integer -> Monkey -> ST s ()
+doMonkey s@(items, activity) red m = do
     let n = monkeyNum m
-    items <- gets $ (!! n) . fst
-    modify (_1 . ix n .~ [])
-    mapM_ (doItem m) items
+    xs <- readArray items n
+    writeArray items n []
+    mapM_ (doItem s red m) (reverse xs)
 
-doRound :: [Monkey] -> State St ()
-doRound ms = mapM_ doMonkey ms
+doRound :: (Items s, Activity s) -> Integer -> [Monkey] -> ST s ()
+doRound s red ms = mapM_ (doMonkey s red) ms
+
+doRounds :: [Monkey] -> Int -> ST s (Activity s)
+doRounds ms n = do
+    let lastN = length ms - 1
+    let red = reducer ms
+    monkeyItems <- newListArray (0, lastN) ((reverse . items) <$> ms)
+    activity <- newArray (0, lastN) 0
+    mapM_ (const $ doRound (monkeyItems, activity) red ms) [1..n]
+    return activity
 
 parse :: Text -> [Monkey]
 parse t = parseMonkey <$> T.splitOn "\n\n" t
 
 part1 monkeys = a0 * a1
     where
-    s0 :: St
-    s0 = (items <$> monkeys, const 0 <$> monkeys)
-
-    doRounds :: State St ()
-    doRounds = mapM_ (const $ doRound monkeys) [1..20]
-
-    (s', activity) = execState doRounds s0
+    activity = elems $ runSTUArray (doRounds monkeys 10000)
     a0:a1:_ = reverse $ sort activity
 
 testcase :: FilePath -> IO ()
