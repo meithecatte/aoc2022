@@ -121,5 +121,4 @@ testcase fname = do
 
 main = do
     testcase "example.in"
-    --testcase "example2.in"
     testcase "puzzle.in"
