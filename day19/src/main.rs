@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::collections::{VecDeque};
 use fnv::FnvHashSet;
+use std::io::Write;
 
 #[derive(Debug)]
 struct Blueprint {
@@ -34,8 +35,6 @@ fn parse_input(fname: &Path) -> Vec<Blueprint> {
         })
         .collect()
 }
-
-const TOTAL_TIME: u16 = 24;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct State {
@@ -73,7 +72,7 @@ impl State {
         }
     }
 
-    fn next_states(&self, bp: &Blueprint, mut cb: impl FnMut(State)) {
+    fn next_states(&self, total_time: u16, bp: &Blueprint, mut cb: impl FnMut(State)) {
         if let Some(wait) = when_sufficient(self.ore, self.ore_production, bp.ore_robot_ore) {
             let mut s = self.advance(wait + 1);
             s.ore -= bp.ore_robot_ore;
@@ -103,10 +102,10 @@ impl State {
             if let Some(w2) = when_sufficient(self.obsidian, self.obsidian_production, bp.geode_robot_obsidian) {
                 let wait = w1.max(w2);
                 let mut s = self.advance(wait + 1);
-                if s.time < TOTAL_TIME {
+                if s.time < total_time {
                     s.ore -= bp.geode_robot_ore;
                     s.obsidian -= bp.geode_robot_obsidian;
-                    s.geodes_till_end += TOTAL_TIME - s.time;
+                    s.geodes_till_end += total_time - s.time;
                     cb(s);
                 }
             }
@@ -114,14 +113,8 @@ impl State {
     }
 }
 
-fn testcase(fname: impl AsRef<Path>) {
-    let fname = fname.as_ref();
-    println!("{fname:?}");
-    let blueprints = parse_input(fname);
-    let mut answer: u32 = 0;
-    for blueprint in blueprints {
-        println!("Considering blueprint {}", blueprint.blueprint_no);
-
+impl Blueprint {
+    fn best_geodes(&self, total_time: u16) -> u16 {
         let initial_state = State {
             time: 0,
             geodes_till_end: 0,
@@ -142,8 +135,8 @@ fn testcase(fname: impl AsRef<Path>) {
 
         let mut best = 0;
         while let Some(state) = queue.pop_front() {
-            state.next_states(&blueprint, |s| {
-                if s.time > TOTAL_TIME {
+            state.next_states(total_time, self, |s| {
+                if s.time > total_time {
                     return;
                 }
                 
@@ -154,25 +147,38 @@ fn testcase(fname: impl AsRef<Path>) {
             });
         }
 
-        println!("Visited {} states", visited.len());
+        best
+    }
+}
+
+fn testcase(fname: impl AsRef<Path>) {
+    let fname = fname.as_ref();
+    println!("{fname:?}");
+    let blueprints = parse_input(fname);
+
+    let mut answer: u32 = 0;
+    for blueprint in &blueprints {
+        print!("Considering blueprint {} - ", blueprint.blueprint_no);
+        std::io::stdout().flush().unwrap();
+        let best = blueprint.best_geodes(24);
         println!("Best geode count: {best}");
-
         answer += blueprint.blueprint_no as u32 * best as u32;
-
-        /*
-        if let Some(&(mut best_state)) = visited.keys().find(|s| s.geodes_till_end == best) {
-            while best_state.time != 0 {
-                dbg!(best_state);
-                best_state = visited[&best_state];
-            }
-
-            dbg!(best_state);
-        }
-        break;
-        */
     }
 
     println!("Part 1: {answer}");
+
+    /*
+    let mut answer: u64 = 1;
+    for blueprint in blueprints.iter().take(3) {
+        print!("Considering blueprint {} - ", blueprint.blueprint_no);
+        std::io::stdout().flush().unwrap();
+        let best = blueprint.best_geodes(32);
+        println!("Best geode count: {best}");
+        answer *= best as u64;
+    }
+
+    println!("Part 2: {answer}");
+    */
 }
 
 fn main() {
