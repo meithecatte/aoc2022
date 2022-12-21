@@ -1,8 +1,6 @@
 use regex::Regex;
 use std::fs;
 use std::path::Path;
-use std::collections::{VecDeque};
-use fnv::FnvHashSet;
 use std::io::Write;
 
 #[derive(Debug)]
@@ -72,19 +70,33 @@ impl State {
         }
     }
 
-    fn next_states(&self, total_time: u16, bp: &Blueprint, mut cb: impl FnMut(State)) {
+    fn best_geodes(&self, total_time: u16, bp: &Blueprint, best: &mut u16) {
+        if self.time >= total_time {
+            return;
+        }
+
+        let time_remaining = total_time - self.time;
+        // conservative estimate: sum from 0 to time_remaining-1
+        let additional = time_remaining * (time_remaining - 1) / 2;
+
+        if self.geodes_till_end + additional <= *best {
+            return;
+        }
+
+        *best = self.geodes_till_end.max(*best);
+
         if let Some(wait) = when_sufficient(self.ore, self.ore_production, bp.ore_robot_ore) {
             let mut s = self.advance(wait + 1);
             s.ore -= bp.ore_robot_ore;
             s.ore_production += 1;
-            cb(s);
+            s.best_geodes(total_time, bp, best);
         }
 
         if let Some(wait) = when_sufficient(self.ore, self.ore_production, bp.clay_robot_ore) {
             let mut s = self.advance(wait + 1);
             s.ore -= bp.clay_robot_ore;
             s.clay_production += 1;
-            cb(s);
+            s.best_geodes(total_time, bp, best);
         }
 
         if let Some(w1) = when_sufficient(self.ore, self.ore_production, bp.obsidian_robot_ore) {
@@ -94,7 +106,7 @@ impl State {
                 s.ore -= bp.obsidian_robot_ore;
                 s.clay -= bp.obsidian_robot_clay;
                 s.obsidian_production += 1;
-                cb(s);
+                s.best_geodes(total_time, bp, best);
             }
         }
 
@@ -106,7 +118,7 @@ impl State {
                     s.ore -= bp.geode_robot_ore;
                     s.obsidian -= bp.geode_robot_obsidian;
                     s.geodes_till_end += total_time - s.time;
-                    cb(s);
+                    s.best_geodes(total_time, bp, best);
                 }
             }
         }
@@ -128,25 +140,8 @@ impl Blueprint {
             obsidian: 0,
         };
 
-        let mut visited = FnvHashSet::default();
-        let mut queue = VecDeque::new();
-        visited.insert(initial_state);
-        queue.push_back(initial_state);
-
         let mut best = 0;
-        while let Some(state) = queue.pop_front() {
-            state.next_states(total_time, self, |s| {
-                if s.time > total_time {
-                    return;
-                }
-                
-                if visited.insert(s) {
-                    queue.push_back(s);
-                    best = best.max(s.geodes_till_end);
-                }
-            });
-        }
-
+        initial_state.best_geodes(total_time, self, &mut best);
         best
     }
 }
@@ -167,7 +162,6 @@ fn testcase(fname: impl AsRef<Path>) {
 
     println!("Part 1: {answer}");
 
-    /*
     let mut answer: u64 = 1;
     for blueprint in blueprints.iter().take(3) {
         print!("Considering blueprint {} - ", blueprint.blueprint_no);
@@ -178,7 +172,6 @@ fn testcase(fname: impl AsRef<Path>) {
     }
 
     println!("Part 2: {answer}");
-    */
 }
 
 fn main() {
