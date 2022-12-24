@@ -2,3 +2,4 @@
 *.hi
 /secret.py
 /__pycache__
+target/
